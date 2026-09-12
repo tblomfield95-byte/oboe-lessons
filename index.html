@@ -380,6 +380,62 @@ let S = {
   imgUrl: "",
 };
 
+/* ================================================================== */
+/*  Persistence — one JSON blob synced to D1 via a Pages Function      */
+/* ================================================================== */
+
+const DEV_MODE = true; // shows the "Load sample replies" button while testing solo
+
+function serializeState() {
+  return JSON.stringify({
+    tab: S.tab,
+    weekNo: S.weekNo,
+    weekStart: S.weekStart,
+    students: S.students,
+    offered: [...S.offered],
+    replies: Object.fromEntries(Object.entries(S.replies).map(([id, r]) => [id, { status: r.status, avail: [...r.avail] }])),
+    chosen: S.chosen,
+    log: S.log,
+    plan: S.plan,
+    draft: S.draft,
+    result: S.result,
+  });
+}
+
+function applySavedState(saved) {
+  if (!saved) return;
+  S.tab = saved.tab || S.tab;
+  S.weekNo = saved.weekNo || S.weekNo;
+  S.weekStart = saved.weekStart || S.weekStart;
+  S.students = saved.students || S.students;
+  S.offered = new Set(saved.offered || []);
+  S.replies = {};
+  Object.entries(saved.replies || {}).forEach(([id, r]) => { S.replies[id] = { status: r.status, avail: new Set(r.avail || []) }; });
+  S.chosen = saved.chosen || 0;
+  S.log = saved.log || [];
+  S.plan = saved.plan || null;
+  S.draft = saved.draft || S.draft;
+  S.result = saved.result || null;
+}
+
+let saveTimer = null;
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    fetch("/api/state", { method: "POST", headers: { "content-type": "application/json" }, body: serializeState() })
+      .catch(() => { /* offline or backend not deployed yet — next change retries */ });
+  }, 500);
+}
+
+async function loadState() {
+  try {
+    const res = await fetch("/api/state");
+    if (!res.ok) return;
+    const saved = await res.json();
+    applySavedState(saved);
+  } catch (e) { /* no backend yet, or offline — start from in-page defaults */ }
+}
+
 const taughtFor = (id) => S.log.filter(e => e.studentId === id).reduce((s, e) => s + e.hours, 0);
 const getParticipants = () => S.students
   .filter(s => S.replies[s.id] && S.replies[s.id].status === "in" && S.replies[s.id].avail.size > 0)
@@ -711,6 +767,7 @@ function render() {
   const app = document.getElementById("app");
   app.innerHTML = renderHeader() + renderTabContent();
   mountAllGrids();
+  scheduleSave();
 }
 
 function renderHeader() {
@@ -785,7 +842,7 @@ function renderRepliesTab() {
   const participants = getParticipants();
   return '<div class="pad">' +
     '<p class="lede">Each student says whether they want a lesson, then paints inside your blocks. Tap a name to edit their grid.</p>' +
-    '<div class="btnrow"><button class="btn sig" data-action="sampleReplies" ' + (S.offered.size ? "" : "disabled") + ">Load sample replies</button></div>" +
+    (DEV_MODE ? '<div class="btnrow"><button class="btn sig" data-action="sampleReplies" ' + (S.offered.size ? "" : "disabled") + ">Load sample replies</button></div>" : "") +
     body + heatPanel +
     '<div class="btnrow"><button class="btn primary" data-action="runSolver" ' + (participants.length ? "" : "disabled") + ">Work out the schedule</button></div>" +
     "</div>";
@@ -975,6 +1032,7 @@ document.getElementById("app").addEventListener("change", (e) => {
 /* ================================================================== */
 
 render();
+loadState().then(render);
 </script>
 </body>
 </html>
