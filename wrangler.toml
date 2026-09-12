@@ -1,0 +1,8 @@
+name = "oboe-lessons"
+compatibility_date = "2026-09-12"
+pages_build_output_dir = "."
+
+[[d1_databases]]
+binding = "DB"
+database_name = "oboe-lessons-db"
+database_id = 37623a6f-9425-4ce5-9c48-fa0f26841d51
