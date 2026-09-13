@@ -8,7 +8,7 @@
   html,body{margin:0;padding:0}
   body{
     --ink:#1B2430; --ink-soft:#5A6675; --paper:#FBFAF8; --panel:#FFFFFF;
-    --rule:#DDD8CE; --sig:#2F6F6B; --sig-soft:#DCEBE8; --warn:#B4552B; --warn-soft:#F6E5DC;
+    --rule:#DDD8CE; --sig:#832222; --sig-soft:#F0DEDE; --warn:#B45309; --warn-soft:#F7E8D2;
     font-family: ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
     font-feature-settings:"tnum" 1;
     background:var(--paper); color:var(--ink);
@@ -31,6 +31,9 @@
        background:var(--panel);color:var(--ink);cursor:pointer}
   .btn.primary{background:var(--ink);color:var(--paper);border-color:var(--ink);font-weight:560}
   .btn.sig{background:var(--sig);color:#fff;border-color:var(--sig);font-weight:560}
+  .btn.confirm-pending{background:var(--warn);color:#fff;border-color:var(--warn);font-weight:560;
+                        animation:confirmPulse 0.35s ease}
+  @keyframes confirmPulse{0%{transform:scale(1)}35%{transform:scale(1.07)}65%{transform:scale(0.97)}100%{transform:scale(1)}}
   .btn:disabled{opacity:.4;cursor:default}
   .btn:focus-visible{outline:2px solid var(--sig);outline-offset:2px}
 
@@ -573,14 +576,14 @@ async function doImage(assign, weekNoLabel, weekStartISO, filenameWeekNo) {
   const FONT = 'ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif';
 
   x.fillStyle = "#FBFAF8"; x.fillRect(0, 0, W, H);
-  x.fillStyle = "#2F6F6B"; x.fillRect(0, 0, W, 12);
+  x.fillStyle = "#832222"; x.fillRect(0, 0, W, 12);
   x.fillStyle = "#1B2430"; x.font = "640 46px " + FONT; x.fillText("Oboe lessons", 64, 108);
   x.fillStyle = "#5A6675"; x.font = "400 28px " + FONT;
   x.fillText("Tom Blomfield · Week " + weekNoLabel + " of " + TERM_WEEKS, 64, 152);
 
   let y = 240;
   days.forEach(d => {
-    x.fillStyle = "#2F6F6B"; x.font = "620 32px " + FONT;
+    x.fillStyle = "#832222"; x.font = "620 32px " + FONT;
     x.fillText(dayDateLong(weekStartISO, +d), 64, y); y += 46;
     x.strokeStyle = "#DDD8CE"; x.lineWidth = 2;
     x.beginPath(); x.moveTo(64, y - 16); x.lineTo(W - 64, y - 16); x.stroke();
@@ -692,6 +695,22 @@ function resetYear() {
   S.offered = new Set(); S.replies = {}; S.result = null; S.openHours = null;
   flash("Year reset");
   render();
+}
+
+// Transient, session-only — never synced or persisted, just a two-tap
+// confirm so a stray tap on Reset year can't wipe the whole year by accident.
+let confirmingReset = false;
+let resetConfirmTimer = null;
+function handleResetClick() {
+  if (confirmingReset) {
+    clearTimeout(resetConfirmTimer);
+    confirmingReset = false;
+    resetYear();
+  } else {
+    confirmingReset = true;
+    render();
+    resetConfirmTimer = setTimeout(() => { confirmingReset = false; render(); }, 3000);
+  }
 }
 
 /* ================================================================== */
@@ -1017,7 +1036,8 @@ function renderHoursTab() {
 
   return '<div class="pad"><p class="lede">' + totalTaught + "h taught of " + totalAllocated + "h allocated, with " + weeksLeft +
     ' weeks left. Tap a name to see or add individual lessons.</p><div class="panel">' + rows + "</div>" +
-    '<div class="btnrow"><button class="btn" data-action="resetYear">Reset year</button></div></div>';
+    '<div class="btnrow"><button class="btn' + (confirmingReset ? " confirm-pending" : "") + '" data-action="resetYearConfirm">' +
+    (confirmingReset ? "Tap again to confirm" : "Reset year") + '</button></div></div>';
 }
 
 /* ================================================================== */
@@ -1030,7 +1050,10 @@ document.getElementById("app").addEventListener("click", (e) => {
   const action = el.dataset.action;
   const id = el.dataset.id;
 
-  if (action === "tab") { S.tab = el.dataset.tab; render(); }
+  if (action === "tab") {
+    if (confirmingReset) { confirmingReset = false; clearTimeout(resetConfirmTimer); }
+    S.tab = el.dataset.tab; render();
+  }
   else if (action === "clearOffer") clearOffer();
   else if (action === "skipWeek") skipWeek();
   else if (action === "goReplies") { S.tab = "replies"; render(); }
@@ -1059,7 +1082,7 @@ document.getElementById("app").addEventListener("click", (e) => {
   else if (action === "toggleHoursOpen") { S.openHours = S.openHours === id ? null : id; render(); }
   else if (action === "removeEntry") removeEntry(id);
   else if (action === "addEntry") addEntry(id);
-  else if (action === "resetYear") resetYear();
+  else if (action === "resetYearConfirm") handleResetClick();
 });
 
 document.getElementById("app").addEventListener("change", (e) => {
