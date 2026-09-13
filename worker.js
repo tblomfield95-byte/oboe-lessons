@@ -34,17 +34,24 @@ export default {
       return new Response("Method not allowed", { status: 405 });
     }
 
-    // Public — just enough for a student to find their name and see what's
-    // on offer. Never the schedule, the hours ledger, or anyone else's
-    // individual reply.
+    // Public — enough for a student to find their name, see what's on
+    // offer, and see (and re-edit) whatever they already submitted. Note
+    // this does expose each student's own reply to anyone with the round
+    // link, not just to that student — there's no per-student login here,
+    // by design, for a small group who already know each other. It still
+    // never includes the schedule or the hours ledger.
     if (url.pathname === "/api/round" && request.method === "GET") {
       const row = await env.DB.prepare("SELECT data FROM app_state WHERE id = 1").first();
       const state = row ? JSON.parse(row.data) : null;
       if (!state) return json({ weekNo: 1, offered: [], students: [] });
+      const replies = state.replies || {};
       return json({
         weekNo: state.weekNo,
         offered: state.offered || [],
-        students: (state.students || []).map((s) => ({ id: s.id, name: s.name })),
+        students: (state.students || []).map((s) => {
+          const r = replies[s.id];
+          return { id: s.id, name: s.name, status: r ? r.status : null, avail: r ? r.avail : [] };
+        }),
       });
     }
 
