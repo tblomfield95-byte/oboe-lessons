@@ -21,6 +21,8 @@
            margin-bottom:8px;border-radius:10px;border:1px solid var(--rule);background:var(--panel);
            color:var(--ink);cursor:pointer}
   .namebtn:active{background:var(--paper)}
+  .namebtn.replied{background:#EAF3F1;border-color:var(--sig)}
+  .replytag{display:block;font-size:12px;color:var(--sig);font-weight:600;margin-top:3px}
   .back{font:inherit;font-size:13px;color:var(--sig);background:none;border:none;padding:0 0 16px;cursor:pointer}
   .choice{display:block;width:100%;text-align:left;font:inherit;font-size:15px;padding:14px 16px;
           margin-bottom:8px;border-radius:10px;border:1px solid var(--rule);background:var(--panel);
@@ -61,7 +63,7 @@ const slotTime = (i) => {
 };
 const key = (d, i) => d + "-" + i;
 
-let R = { loading: true, error: null, weekNo: null, offered: new Set(), students: [], picked: null, status: null, avail: new Set(), submitted: false, submitting: false };
+let R = { loading: true, error: null, weekNo: null, offered: new Set(), students: [], picked: null, stage: null, avail: new Set(), submitted: false, submittedStatus: null, submitting: false };
 
 async function boot() {
   try {
@@ -77,7 +79,14 @@ async function boot() {
   render();
 }
 
-function pick(id) { R.picked = id; R.stage = "ask"; R.avail = new Set(); render(); }
+function pick(id) {
+  R.picked = id;
+  R.stage = "ask";
+  const s = R.students.find(x => x.id === id);
+  R.avail = new Set((s && s.avail) || []);
+  render();
+}
+function editAgain() { R.submitted = false; R.stage = "ask"; render(); }
 function goGrid() { R.stage = "grid"; render(); }
 function back() { R.picked = null; R.stage = null; R.avail = new Set(); render(); }
 
@@ -197,25 +206,34 @@ function render() {
     const msg = R.submittedStatus === "skip" ? "No lesson needed this week — got it."
       : R.submittedStatus === "none" ? "Thanks for letting us know — Tom will sort something out."
       : "Got your times for week " + R.weekNo + ".";
-    app.innerHTML = '<div class="pad"><h1>Thanks' + (first ? ", " + first : "") + '!</h1><p class="done">' + msg + "</p></div>";
+    app.innerHTML = '<div class="pad"><h1>Thanks' + (first ? ", " + first : "") + '!</h1><p class="done">' + msg + '</p>' +
+      '<button class="back" style="margin-top:16px" onclick="editAgain()">\u2190 Change your answer</button></div>';
     return;
   }
 
   if (!R.picked) {
     app.innerHTML = '<div class="pad"><h1>Oboe Lessons — week ' + R.weekNo + '</h1>' +
       '<p class="sub">Tap your name to give your times.</p>' +
-      R.students.map(s => '<button class="namebtn" onclick="pick(\'' + s.id + '\')">' + s.name + "</button>").join("") +
+      R.students.map(s => {
+        if (s.status) {
+          const label = s.status === "in" ? "Times given" : s.status === "skip" ? "Not needed this week" : "None of these worked";
+          return '<button class="namebtn replied" onclick="pick(\'' + s.id + '\')">' + s.name +
+            '<span class="replytag">\u2713 ' + label + ' \u2014 tap to edit</span></button>';
+        }
+        return '<button class="namebtn" onclick="pick(\'' + s.id + '\')">' + s.name + "</button>";
+      }).join("") +
       "</div>";
     return;
   }
 
   const name = (R.students.find(s => s.id === R.picked) || {}).name || "";
+  const prevStatus = (R.students.find(s => s.id === R.picked) || {}).status || null;
 
   if (R.stage === "ask") {
     app.innerHTML = '<div class="pad"><button class="back" onclick="back()">← Not ' + name.split(" ")[0] + "?</button>" +
       "<h1>" + name + "</h1><p class=\"sub\">Week " + R.weekNo + '</p>' +
-      '<button class="choice" onclick="submitStatus(\'skip\')">Not needed this week</button>' +
-      '<button class="choice" onclick="goGrid()">Yes, show me the times</button>' +
+      '<button class="choice' + (prevStatus === "skip" ? " sel" : "") + '" onclick="submitStatus(\'skip\')">Not needed this week</button>' +
+      '<button class="choice' + (prevStatus === "in" ? " sel" : "") + '" onclick="goGrid()">Yes, show me the times</button>' +
       "</div>";
     return;
   }
@@ -226,7 +244,7 @@ function render() {
     '<p class="lede">Drag across the times you could do:</p>' +
     buildGridHTML(R.avail, R.offered) +
     '<p class="count" id="slotCount">' + R.avail.size + " slot" + (R.avail.size === 1 ? "" : "s") + " selected</p>" +
-    '<button class="choice" onclick="submitStatus(\'none\')" ' + (R.submitting ? "disabled" : "") + '>None of these times work</button>' +
+    '<button class="choice' + (prevStatus === "none" ? " sel" : "") + '" onclick="submitStatus(\'none\')" ' + (R.submitting ? "disabled" : "") + '>None of these times work</button>' +
     '<button class="btn" id="submitBtn" onclick="submitStatus(\'in\')" ' + (R.avail.size === 0 || R.submitting ? "disabled" : "") + '>' + (R.submitting ? "Saving…" : "Submit") + "</button></div>";
 
   app.innerHTML = body;
