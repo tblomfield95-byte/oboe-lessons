@@ -77,20 +77,20 @@ async function boot() {
   render();
 }
 
-function pick(id) { R.picked = id; R.status = null; R.avail = new Set(); render(); }
-function setStatus(s) { R.status = s; if (s !== "in") R.avail = new Set(); render(); }
-function back() { R.picked = null; R.status = null; R.avail = new Set(); render(); }
+function pick(id) { R.picked = id; R.stage = "ask"; R.avail = new Set(); render(); }
+function goGrid() { R.stage = "grid"; render(); }
+function back() { R.picked = null; R.stage = null; R.avail = new Set(); render(); }
 
-async function submit() {
-  if (!R.picked || !R.status) return;
+async function submitStatus(status) {
   R.submitting = true; render();
   try {
     await fetch("/api/reply", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ studentId: R.picked, status: R.status, avail: [...R.avail] }),
+      body: JSON.stringify({ studentId: R.picked, status, avail: status === "in" ? [...R.avail] : [] }),
     });
     R.submitted = true;
+    R.submittedStatus = status;
   } catch (e) {
     R.submitting = false;
     render();
@@ -143,7 +143,7 @@ function mountGrid() {
     last = k; apply(c, painting);
   };
   const end = () => {
-    if (painting !== null) { painting = null; last = ""; updateCount(); }
+    if (painting !== null) { painting = null; last = ""; updateAfterPaint(); }
   };
   el.addEventListener("touchstart", (e) => {
     const t = e.touches[0];
@@ -174,9 +174,11 @@ function mountGrid() {
 }
 window.addEventListener("mouseup", () => { if (window.__gridMouseUp) { const fn = window.__gridMouseUp; window.__gridMouseUp = null; fn(); } });
 
-function updateCount() {
-  const el = document.getElementById("slotCount");
-  if (el) el.textContent = R.avail.size + " slot" + (R.avail.size === 1 ? "" : "s") + " selected";
+function updateAfterPaint() {
+  const cnt = document.getElementById("slotCount");
+  if (cnt) cnt.textContent = R.avail.size + " slot" + (R.avail.size === 1 ? "" : "s") + " selected";
+  const btn = document.getElementById("submitBtn");
+  if (btn) btn.disabled = R.avail.size === 0;
 }
 
 function render() {
@@ -191,7 +193,11 @@ function render() {
 
   if (R.submitted) {
     const name = (R.students.find(s => s.id === R.picked) || {}).name || "";
-    app.innerHTML = '<div class="pad"><h1>Thanks' + (name ? ", " + name.split(" ")[0] : "") + '!</h1><p class="done">Got your answer for week ' + R.weekNo + ". You'll hear back once the schedule's worked out.</p></div>";
+    const first = name ? name.split(" ")[0] : "";
+    const msg = R.submittedStatus === "skip" ? "No lesson needed this week — got it."
+      : R.submittedStatus === "none" ? "Thanks for letting us know — Tom will sort something out."
+      : "Got your times for week " + R.weekNo + ".";
+    app.innerHTML = '<div class="pad"><h1>Thanks' + (first ? ", " + first : "") + '!</h1><p class="done">' + msg + "</p></div>";
     return;
   }
 
@@ -204,21 +210,24 @@ function render() {
   }
 
   const name = (R.students.find(s => s.id === R.picked) || {}).name || "";
-  let body = '<div class="pad"><button class="back" onclick="back()">← Not ' + name.split(" ")[0] + "?</button>" +
-    "<h1>" + name + "</h1><p class=\"sub\">Week " + R.weekNo + "</p>";
 
-  body += '<button class="choice' + (R.status === "in" ? " sel" : "") + '" onclick="setStatus(\'in\')">Yes, I\'d like a lesson</button>' +
-    '<button class="choice' + (R.status === "skip" ? " sel" : "") + '" onclick="setStatus(\'skip\')">Not needed this week</button>' +
-    '<button class="choice' + (R.status === "none" ? " sel" : "") + '" onclick="setStatus(\'none\')">None of these times work</button>';
-
-  if (R.status === "in") {
-    body += '<p class="lede" style="margin-top:16px">Drag across the times you could do:</p>' +
-      buildGridHTML(R.avail, R.offered) +
-      '<p class="count" id="slotCount">' + R.avail.size + " slot" + (R.avail.size === 1 ? "" : "s") + " selected</p>";
+  if (R.stage === "ask") {
+    app.innerHTML = '<div class="pad"><button class="back" onclick="back()">← Not ' + name.split(" ")[0] + "?</button>" +
+      "<h1>" + name + "</h1><p class=\"sub\">Week " + R.weekNo + '</p>' +
+      '<button class="choice" onclick="submitStatus(\'skip\')">Not needed this week</button>' +
+      '<button class="choice" onclick="goGrid()">Yes, show me the times</button>' +
+      "</div>";
+    return;
   }
 
-  const canSubmit = R.status && (R.status !== "in" || R.avail.size > 0) && !R.submitting;
-  body += '<button class="btn" onclick="submit()" ' + (canSubmit ? "" : "disabled") + ">" + (R.submitting ? "Saving…" : "Submit") + "</button></div>";
+  // stage === "grid" — show what's on offer, decide once you've actually seen it
+  let body = '<div class="pad"><button class="back" onclick="back()">← Not ' + name.split(" ")[0] + "?</button>" +
+    "<h1>" + name + "</h1><p class=\"sub\">Week " + R.weekNo + '</p>' +
+    '<p class="lede">Drag across the times you could do:</p>' +
+    buildGridHTML(R.avail, R.offered) +
+    '<p class="count" id="slotCount">' + R.avail.size + " slot" + (R.avail.size === 1 ? "" : "s") + " selected</p>" +
+    '<button class="choice" onclick="submitStatus(\'none\')" ' + (R.submitting ? "disabled" : "") + '>None of these times work</button>' +
+    '<button class="btn" id="submitBtn" onclick="submitStatus(\'in\')" ' + (R.avail.size === 0 || R.submitting ? "disabled" : "") + '>' + (R.submitting ? "Saving…" : "Submit") + "</button></div>";
 
   app.innerHTML = body;
   mountGrid();
