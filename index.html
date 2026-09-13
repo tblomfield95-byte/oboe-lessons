@@ -105,6 +105,7 @@ async function submitStatus(status) {
     // true when the page first loaded.
     const s = R.students.find(x => x.id === R.picked);
     if (s) { s.status = status; s.avail = status === "in" ? [...R.avail] : []; }
+    R.submitting = false;
   } catch (e) {
     R.submitting = false;
     render();
