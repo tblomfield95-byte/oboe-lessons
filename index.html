@@ -100,6 +100,11 @@ async function submitStatus(status) {
     });
     R.submitted = true;
     R.submittedStatus = status;
+    // Keep the in-memory record in sync, so going back to edit again in
+    // this same session shows what was just submitted — not whatever was
+    // true when the page first loaded.
+    const s = R.students.find(x => x.id === R.picked);
+    if (s) { s.status = status; s.avail = status === "in" ? [...R.avail] : []; }
   } catch (e) {
     R.submitting = false;
     render();
