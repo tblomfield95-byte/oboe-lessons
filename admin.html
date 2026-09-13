@@ -786,6 +786,7 @@ function renderTabContent() {
 function renderOfferTab() {
   const hours = (S.offered.size * SLOT_MIN) / 60;
   return '<div class="pad">' +
+    '<label class="dateline" style="margin-bottom:14px">Current week <input type="number" inputmode="numeric" min="1" max="' + TERM_WEEKS + '" data-bind="weekNo" value="' + S.weekNo + '" style="width:56px"> of ' + TERM_WEEKS + '</label>' +
     '<p class="lede">Drag to paint the times you could teach this week. Students only ever see these.</p>' +
     '<div class="btnrow"><button class="btn" data-action="clearOffer">Clear</button></div>' +
     buildGridHTML("offer", { selected: S.offered, offered: null, heat: null }) +
@@ -1019,6 +1020,12 @@ document.getElementById("app").addEventListener("change", (e) => {
   if (!el) return;
   const bind = el.dataset.bind;
   if (bind === "weekStart") { S.weekStart = el.value; S.imgUrl = ""; S.fallbackText = ""; render(); }
+  else if (bind === "weekNo") {
+    let n = parseInt(el.value, 10);
+    if (!isFinite(n)) n = S.weekNo;
+    S.weekNo = Math.max(1, Math.min(TERM_WEEKS, n));
+    render();
+  }
   else if (bind === "draftDate") { S.draft.date = el.value; }
   else if (bind === "draftHours") { S.draft.hours = el.value; }
 });
