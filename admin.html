@@ -160,7 +160,7 @@ const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const START_HOUR = 9;
 const SLOT_MIN = 30;
 const SLOTS = 20; // 09:00 -> 19:00
-const TERM_WEEKS = 30;
+const TERM_WEEKS = 32; // 35 calendar weeks across the three terms, minus one reading week per term
 
 const slotTime = (i) => {
   const total = START_HOUR * 60 + i * SLOT_MIN;
@@ -183,12 +183,44 @@ const INITIAL_STUDENTS = [
 
 function cloneStudents() { return INITIAL_STUDENTS.map(s => ({ ...s })); }
 
-const nextMonday = () => {
-  const d = new Date();
-  d.setDate(d.getDate() + ((8 - d.getDay()) % 7 || 7));
-  return d.toISOString().slice(0, 10);
-};
 const todayISO = () => new Date().toISOString().slice(0, 10);
+
+// The real term boundaries, 2026-27 — used only to detect when advancing a
+// week would walk off the end of a term, so it can jump straight to the
+// next term's start instead of wandering into the holidays. Reading weeks
+// aren't listed here deliberately: they don't need special handling, since
+// marking one "Not teaching this week" advances the date by the same
+// ordinary 7 days as any other week off.
+const TERM_RANGES = [
+  { start: "2026-09-14", end: "2026-12-04" },
+  { start: "2027-01-04", end: "2027-03-19" },
+  { start: "2027-04-12", end: "2027-07-02" },
+];
+
+function nextWeekStart(iso) {
+  const naive = new Date(iso + "T00:00:00");
+  naive.setDate(naive.getDate() + 7);
+  const naiveISO = naive.toISOString().slice(0, 10);
+  const term = TERM_RANGES.find(t => iso >= t.start && iso <= t.end);
+  if (!term) return naiveISO; // outside any known term — just roll forward
+  if (naiveISO > term.end) {
+    const next = TERM_RANGES[TERM_RANGES.indexOf(term) + 1];
+    return next ? next.start : naiveISO; // jump the gap, or fall back at year end
+  }
+  return naiveISO;
+}
+
+function weekRangeLabel(iso) {
+  if (!iso) return "";
+  const mon = new Date(iso + "T00:00:00");
+  const fri = new Date(mon.getTime()); fri.setDate(fri.getDate() + 4);
+  const sameMonth = mon.getMonth() === fri.getMonth() && mon.getFullYear() === fri.getFullYear();
+  const monMonth = mon.toLocaleDateString("en-GB", { month: "short" });
+  const friMonth = fri.toLocaleDateString("en-GB", { month: "short" });
+  return sameMonth
+    ? mon.getDate() + "\u2013" + fri.getDate() + " " + friMonth + " " + fri.getFullYear()
+    : mon.getDate() + " " + monMonth + " \u2013 " + fri.getDate() + " " + friMonth + " " + fri.getFullYear();
+}
 
 function escapeHTML(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -367,7 +399,7 @@ function solve(participants, offered) {
 let S = {
   tab: "week",
   weekNo: 1,
-  weekStart: nextMonday(),
+  weekStart: TERM_RANGES[0].start,
   students: cloneStudents(),
   offered: new Set(),
   replies: {},          // id -> {status:'in'|'skip'|'none', avail:Set}
@@ -628,11 +660,22 @@ function endWeek() {
   S.log.push(...entries);
   S.students.forEach(s => { s.lesson = 2; });
   S.weekNo = Math.min(TERM_WEEKS, S.weekNo + 1);
-  const ns = new Date(S.weekStart + "T00:00:00"); ns.setDate(ns.getDate() + 7);
-  S.weekStart = ns.toISOString().slice(0, 10);
+  S.weekStart = nextWeekStart(S.weekStart);
   S.plan = null; S.offered = new Set(); S.replies = {};
   S.imgUrl = ""; S.fallbackText = ""; S.tab = "hours";
   flash(entries.length + " lessons logged");
+  render();
+}
+
+function skipWeek() {
+  if (S.plan) { flash("Finish or clear this week's schedule first"); return; }
+  const skipped = S.weekNo;
+  S.students.forEach(s => { s.lesson = 2; });
+  S.weekNo = Math.min(TERM_WEEKS, S.weekNo + 1);
+  S.weekStart = nextWeekStart(S.weekStart);
+  S.offered = new Set(); S.replies = {}; S.result = null;
+  S.imgUrl = ""; S.fallbackText = "";
+  flash("Week " + skipped + " marked as not teaching");
   render();
 }
 
@@ -645,7 +688,7 @@ function addEntry(studentId) {
 function removeEntry(id) { S.log = S.log.filter(e => e.id !== id); render(); }
 
 function resetYear() {
-  S.students = cloneStudents(); S.log = []; S.plan = null; S.weekNo = 1; S.weekStart = nextMonday();
+  S.students = cloneStudents(); S.log = []; S.plan = null; S.weekNo = 1; S.weekStart = TERM_RANGES[0].start;
   S.offered = new Set(); S.replies = {}; S.result = null; S.openHours = null;
   flash("Year reset");
   render();
@@ -786,9 +829,12 @@ function renderTabContent() {
 function renderOfferTab() {
   const hours = (S.offered.size * SLOT_MIN) / 60;
   return '<div class="pad">' +
-    '<label class="dateline" style="margin-bottom:14px">Current week <input type="number" inputmode="numeric" min="1" max="' + TERM_WEEKS + '" data-bind="weekNo" value="' + S.weekNo + '" style="width:56px"> of ' + TERM_WEEKS + '</label>' +
+    '<label class="dateline" style="margin-bottom:8px">Current week <input type="number" inputmode="numeric" min="1" max="' + TERM_WEEKS + '" data-bind="weekNo" value="' + S.weekNo + '" style="width:56px"> of ' + TERM_WEEKS + '</label>' +
+    '<label class="dateline" style="margin-bottom:4px">Week beginning <input type="date" data-bind="weekStart" value="' + S.weekStart + '"></label>' +
+    '<p style="font-size:13px;color:var(--ink-soft);margin:0 0 14px">' + (weekRangeLabel(S.weekStart) || "") + ' — check this matches the week you mean; correct it if a reading week or anything else has thrown it off.</p>' +
     '<p class="lede">Drag to paint the times you could teach this week. Students only ever see these.</p>' +
-    '<div class="btnrow"><button class="btn" data-action="clearOffer">Clear</button></div>' +
+    '<div class="btnrow"><button class="btn" data-action="clearOffer">Clear</button>' +
+    '<button class="btn" data-action="skipWeek">Not teaching this week</button></div>' +
     buildGridHTML("offer", { selected: S.offered, offered: null, heat: null }) +
     '<div class="meter"><span>Offered this week</span><b>' + hours + 'h</b></div>' +
     '<div class="btnrow" style="margin-top:16px"><button class="btn primary" data-action="goReplies" ' + (S.offered.size ? "" : "disabled") + '>Send to students</button></div>' +
@@ -986,6 +1032,7 @@ document.getElementById("app").addEventListener("click", (e) => {
 
   if (action === "tab") { S.tab = el.dataset.tab; render(); }
   else if (action === "clearOffer") clearOffer();
+  else if (action === "skipWeek") skipWeek();
   else if (action === "goReplies") { S.tab = "replies"; render(); }
   else if (action === "sampleReplies") sampleReplies();
   else if (action === "toggleStudentOpen") { S.openStudent = S.openStudent === id ? null : id; render(); }
