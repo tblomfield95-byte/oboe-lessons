@@ -263,11 +263,13 @@ function combinations(arr, k) {
   return out;
 }
 
-function dayBlockers(withCands) {
+function dayBlockers(withCands, offered) {
   return DAYS.map((label, d) => {
+    const dayWasOffered = [...offered].some((k) => Number(k.split("-")[0]) === d);
+    if (!dayWasOffered) return null; // nothing to negotiate — you never offered this day
     const blocked = withCands.filter((p) => !p.cands.some((c) => c.d === d)).map((p) => p.name);
     return { day: label, blocked };
-  }).sort((a, b) => a.blocked.length - b.blocked.length);
+  }).filter(Boolean).sort((a, b) => a.blocked.length - b.blocked.length);
 }
 
 function solve(participants, offered) {
@@ -327,7 +329,7 @@ function solve(participants, offered) {
     for (const mask of masks) {
       const found = tryMask(mask, withCands);
       if (found.length) {
-        return { ok: true, options: rankAndDedupe(found), unplaced: [], blockers: dayBlockers(withCands) };
+        return { ok: true, options: rankAndDedupe(found), unplaced: [], blockers: dayBlockers(withCands, offered) };
       }
     }
   }
@@ -345,7 +347,7 @@ function solve(participants, offered) {
             ok: false,
             options: rankAndDedupe(found).slice(0, 2),
             unplaced: withCands.filter((p) => !placedIds.has(p.id)).map((p) => p.name),
-            blockers: dayBlockers(withCands),
+            blockers: dayBlockers(withCands, offered),
           };
           break;
         }
@@ -355,7 +357,7 @@ function solve(participants, offered) {
     if (best) break;
   }
 
-  return best || { ok: false, options: [], unplaced: withCands.map((p) => p.name), blockers: dayBlockers(withCands) };
+  return best || { ok: false, options: [], unplaced: withCands.map((p) => p.name), blockers: dayBlockers(withCands, offered) };
 }
 
 /* ================================================================== */
