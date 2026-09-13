@@ -682,6 +682,18 @@ function skipWeek() {
   render();
 }
 
+async function goReplies() {
+  S.tab = "replies";
+  render();
+  const url = window.location.origin + "/";
+  try {
+    await navigator.clipboard.writeText(url);
+    flash("Student link copied to clipboard");
+  } catch (e) {
+    flash("Couldn't copy — the link is " + url);
+  }
+}
+
 function addEntry(studentId) {
   if (!S.draft.date || !S.draft.hours) return;
   S.log.push({ id: "m" + Date.now(), studentId, date: S.draft.date, hours: Number(S.draft.hours), manual: true });
@@ -902,8 +914,11 @@ function renderRepliesTab() {
   }
 
   const participants = getParticipants();
+  const lede = S.offered.size
+    ? '<p class="lede">Each student says whether they want a lesson, then paints inside your blocks. Tap a name to edit their grid.</p>'
+    : "";
   return '<div class="pad">' +
-    '<p class="lede">Each student says whether they want a lesson, then paints inside your blocks. Tap a name to edit their grid.</p>' +
+    lede +
     (DEV_MODE ? '<div class="btnrow"><button class="btn sig" data-action="sampleReplies" ' + (S.offered.size ? "" : "disabled") + ">Load sample replies</button></div>" : "") +
     body + heatPanel +
     '<div class="btnrow"><button class="btn primary" data-action="runSolver" ' + (participants.length ? "" : "disabled") + ">Work out the schedule</button></div>" +
@@ -1056,7 +1071,7 @@ document.getElementById("app").addEventListener("click", (e) => {
   }
   else if (action === "clearOffer") clearOffer();
   else if (action === "skipWeek") skipWeek();
-  else if (action === "goReplies") { S.tab = "replies"; render(); }
+  else if (action === "goReplies") goReplies();
   else if (action === "sampleReplies") sampleReplies();
   else if (action === "toggleStudentOpen") { S.openStudent = S.openStudent === id ? null : id; render(); }
   else if (action === "setStatus") {
