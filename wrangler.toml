@@ -1,6 +1,10 @@
 name = "oboe-lessons"
+main = "worker.js"
 compatibility_date = "2026-09-12"
-pages_build_output_dir = "."
+
+[assets]
+directory = "."
+binding = "ASSETS"
 
 [[d1_databases]]
 binding = "DB"
