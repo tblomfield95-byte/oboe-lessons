@@ -474,11 +474,6 @@ function flash(msg) {
 /*  Actions                                                            */
 /* ================================================================== */
 
-function quickFill() {
-  const n = new Set();
-  [1, 3].forEach(d => { for (let i = 2; i <= 13; i++) n.add(key(d, i)); });
-  S.offered = n; S.result = null; render();
-}
 function clearOffer() { S.offered = new Set(); S.result = null; render(); }
 
 function sampleReplies() {
@@ -790,8 +785,7 @@ function renderOfferTab() {
   const hours = (S.offered.size * SLOT_MIN) / 60;
   return '<div class="pad">' +
     '<p class="lede">Drag to paint the times you could teach this week. Students only ever see these.</p>' +
-    '<div class="btnrow"><button class="btn" data-action="quickFill">Tue &amp; Thu, 10–4</button>' +
-    '<button class="btn" data-action="clearOffer">Clear</button></div>' +
+    '<div class="btnrow"><button class="btn" data-action="clearOffer">Clear</button></div>' +
     buildGridHTML("offer", { selected: S.offered, offered: null, heat: null }) +
     '<div class="meter"><span>Offered this week</span><b>' + hours + 'h</b></div>' +
     '<div class="btnrow" style="margin-top:16px"><button class="btn primary" data-action="goReplies" ' + (S.offered.size ? "" : "disabled") + '>Send to students</button></div>' +
@@ -871,7 +865,8 @@ function renderPreConfirmPlanTab() {
       '<div class="opthead"><b>' + daysLabel + "</b><span>" + gapsLabel + "</span></div>" + lines + "</div>";
   }).join("");
 
-  const blockersHTML = '<div class="panel"><h3>If you want it down to one day</h3>' + r.blockers.map(b =>
+  const alreadyOneDay = r.options.length > 0 && r.options[0].days <= 1;
+  const blockersHTML = alreadyOneDay ? "" : '<div class="panel"><h3>If you want it down to one day</h3>' + r.blockers.map(b =>
     '<div class="blocker"><b>' + b.day + "</b> " + (b.blocked.length === 0 ? '<span class="clear">works for everyone</span>' : "works for everyone except " + b.blocked.join(", ")) + "</div>"
   ).join("") + "</div>";
 
@@ -987,7 +982,6 @@ document.getElementById("app").addEventListener("click", (e) => {
   const id = el.dataset.id;
 
   if (action === "tab") { S.tab = el.dataset.tab; render(); }
-  else if (action === "quickFill") quickFill();
   else if (action === "clearOffer") clearOffer();
   else if (action === "goReplies") { S.tab = "replies"; render(); }
   else if (action === "sampleReplies") sampleReplies();
