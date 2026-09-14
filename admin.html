@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Oboe Lessons - Tom Blomfield</title>
+<title>Lesson Scheduler</title>
 <style>
   html,body{margin:0;padding:0}
   body{
@@ -110,6 +110,9 @@
             font-size:13px;color:var(--ink-soft)}
   .dateline input{font:inherit;font-size:13.5px;padding:7px 9px;border-radius:7px;
                   border:1px solid var(--rule);background:var(--paper);color:var(--ink)}
+  .dateline input[type="number"]{width:40px;text-align:center;-moz-appearance:textfield}
+  .dateline input[type="number"]::-webkit-outer-spin-button,
+  .dateline input[type="number"]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
   .fallback{width:100%;margin-top:12px;font:inherit;font-size:13px;line-height:1.5;
             padding:10px;border-radius:8px;border:1px solid var(--rule);
             background:var(--paper);color:var(--ink);resize:vertical}
@@ -174,19 +177,11 @@ const slotTime = (i) => {
 
 const key = (d, i) => d + "-" + i;
 
-const INITIAL_STUDENTS = [
-  { id: "anton", name: "Anton Brown", course: "BMus 3", allocated: 20, lesson: 2 },
-  { id: "blake", name: "Blake Curtis", course: "MA Perf 1", allocated: 27.5, lesson: 2 },
-  { id: "harold", name: "Harold Lee", course: "BMus 3", allocated: 4, lesson: 2 },
-  { id: "jennifer", name: "Jennifer Ryan", course: "MA Perf 2", allocated: 6, lesson: 2 },
-  { id: "jessica", name: "Jessica Ellis", course: "MA Perf 2", allocated: 7.5, lesson: 2 },
-  { id: "lolita", name: "Lolita Marchenko", course: "BMus 4", allocated: 8, lesson: 2 },
-  { id: "oscar", name: "Oscar Gillespie", course: "PGCert 2", allocated: 8.5, lesson: 2 },
-];
+const INITIAL_STUDENTS = [];
 
 function cloneStudents() { return INITIAL_STUDENTS.map(s => ({ ...s })); }
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const todayISO = () => { const n = new Date(); return new Date(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate())).toISOString().slice(0, 10); };
 
 // The real term boundaries, 2026-27 — used only to detect when advancing a
 // week would walk off the end of a term, so it can jump straight to the
@@ -200,10 +195,20 @@ const TERM_RANGES = [
   { start: "2027-04-12", end: "2027-07-02" },
 ];
 
+// Parses a plain "YYYY-MM-DD" into its UTC calendar components. Building
+// dates via new Date(iso + "T00:00:00") and reading them back with
+// .toISOString() is the classic trap here: the first half is local time,
+// the second is always UTC, and in any positive-UTC-offset timezone (BST
+// included) that silently loses a day on every round trip. Working in
+// Date.UTC(...) throughout sidesteps the mismatch entirely.
+function isoParts(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return { y, m, d };
+}
+
 function nextWeekStart(iso) {
-  const naive = new Date(iso + "T00:00:00");
-  naive.setDate(naive.getDate() + 7);
-  const naiveISO = naive.toISOString().slice(0, 10);
+  const { y, m, d } = isoParts(iso);
+  const naiveISO = new Date(Date.UTC(y, m - 1, d + 7)).toISOString().slice(0, 10);
   const term = TERM_RANGES.find(t => iso >= t.start && iso <= t.end);
   if (!term) return naiveISO; // outside any known term — just roll forward
   if (naiveISO > term.end) {
@@ -215,14 +220,15 @@ function nextWeekStart(iso) {
 
 function weekRangeLabel(iso) {
   if (!iso) return "";
-  const mon = new Date(iso + "T00:00:00");
-  const fri = new Date(mon.getTime()); fri.setDate(fri.getDate() + 4);
-  const sameMonth = mon.getMonth() === fri.getMonth() && mon.getFullYear() === fri.getFullYear();
-  const monMonth = mon.toLocaleDateString("en-GB", { month: "short" });
-  const friMonth = fri.toLocaleDateString("en-GB", { month: "short" });
+  const { y, m, d } = isoParts(iso);
+  const mon = new Date(Date.UTC(y, m - 1, d));
+  const fri = new Date(Date.UTC(y, m - 1, d + 4));
+  const sameMonth = mon.getUTCMonth() === fri.getUTCMonth() && mon.getUTCFullYear() === fri.getUTCFullYear();
+  const monMonth = mon.toLocaleDateString("en-GB", { month: "short", timeZone: "UTC" });
+  const friMonth = fri.toLocaleDateString("en-GB", { month: "short", timeZone: "UTC" });
   return sameMonth
-    ? mon.getDate() + "\u2013" + fri.getDate() + " " + friMonth + " " + fri.getFullYear()
-    : mon.getDate() + " " + monMonth + " \u2013 " + fri.getDate() + " " + friMonth + " " + fri.getFullYear();
+    ? mon.getUTCDate() + "\u2013" + fri.getUTCDate() + " " + friMonth + " " + fri.getUTCFullYear()
+    : mon.getUTCDate() + " " + monMonth + " \u2013 " + fri.getUTCDate() + " " + friMonth + " " + fri.getUTCFullYear();
 }
 
 function escapeHTML(s) {
@@ -399,6 +405,17 @@ function solve(participants, offered) {
 /*  State                                                              */
 /* ================================================================== */
 
+// Who's logged in — fetched once from /api/me, never synced back as part
+// of the app state (that stays purely the studio data, not the account).
+let ME = { name: "", instrument: "", slug: "", email: "" };
+async function loadMe() {
+  try {
+    const res = await fetch("/api/me");
+    if (res.status === 401) { window.location.href = "/login.html"; return; }
+    if (res.ok) ME = await res.json();
+  } catch (e) { /* offline — header just shows the generic title */ }
+}
+
 let S = {
   tab: "week",
   weekNo: 1,
@@ -467,6 +484,7 @@ function scheduleSave() {
 async function loadState() {
   try {
     const res = await fetch("/api/state");
+    if (res.status === 401) { window.location.href = "/login.html"; return; }
     if (!res.ok) return;
     const saved = await res.json();
     applySavedState(saved);
@@ -550,7 +568,8 @@ function runSolver() {
 
 function buildShareText(assign, weekNoLabel, weekStartISO) {
   const by = groupByDay(assign);
-  let out = "Oboe lessons — week " + weekNoLabel;
+  const heading = (ME.instrument ? ME.instrument + " lessons" : "Lessons") + " — week " + weekNoLabel;
+  let out = heading;
   Object.keys(by).sort().forEach(d => {
     out += "\n\n" + dayDateLong(weekStartISO, +d) + "\n";
     by[d].forEach(a => { out += slotTime(a.start) + "–" + slotTime(a.start + a.lesson) + "  " + a.name.split(" ")[0] + "\n"; });
@@ -575,11 +594,12 @@ async function doImage(assign, weekNoLabel, weekStartISO, filenameWeekNo) {
   const x = c.getContext("2d");
   const FONT = 'ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif';
 
+  const heading = ME.instrument ? ME.instrument + " lessons" : "Lessons";
   x.fillStyle = "#FBFAF8"; x.fillRect(0, 0, W, H);
   x.fillStyle = "#832222"; x.fillRect(0, 0, W, 12);
-  x.fillStyle = "#1B2430"; x.font = "640 46px " + FONT; x.fillText("Oboe lessons", 64, 108);
+  x.fillStyle = "#1B2430"; x.font = "640 46px " + FONT; x.fillText(heading, 64, 108);
   x.fillStyle = "#5A6675"; x.font = "400 28px " + FONT;
-  x.fillText("Tom Blomfield · Week " + weekNoLabel + " of " + TERM_WEEKS, 64, 152);
+  x.fillText((ME.name ? ME.name + " · " : "") + "Week " + weekNoLabel + " of " + TERM_WEEKS, 64, 152);
 
   let y = 240;
   days.forEach(d => {
@@ -605,9 +625,9 @@ async function doImage(assign, weekNoLabel, weekStartISO, filenameWeekNo) {
   x.fillText("Let me know as soon as possible if anything changes.", 64, H - 52);
 
   const blob = await new Promise(res => c.toBlob(res, "image/png"));
-  const file = new File([blob], "oboe-week-" + filenameWeekNo + ".png", { type: "image/png" });
+  const file = new File([blob], "lessons-week-" + filenameWeekNo + ".png", { type: "image/png" });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: "Oboe lessons" }); return; } catch (e) { /* fall through */ }
+    try { await navigator.share({ files: [file], title: heading }); return; } catch (e) { /* fall through */ }
   }
   if (S.imgUrl) URL.revokeObjectURL(S.imgUrl);
   S.imgUrl = URL.createObjectURL(blob);
@@ -650,13 +670,13 @@ function rescheduleWeek() {
 }
 
 function endWeek() {
-  const base = new Date(S.plan.weekStart + "T00:00:00");
+  const { y, m, d } = isoParts(S.plan.weekStart);
   const billable = S.plan.lessons.filter(l => l.status === "planned" || l.status === "cancelled_late");
   const entries = billable.map(l => {
-    const d = new Date(base); d.setDate(d.getDate() + l.d);
+    const dateISO = new Date(Date.UTC(y, m - 1, d + l.d)).toISOString().slice(0, 10);
     return {
       id: "s" + Date.now() + "-" + l.key, studentId: l.id,
-      date: d.toISOString().slice(0, 10), hours: (l.lesson * SLOT_MIN) / 60,
+      date: dateISO, hours: (l.lesson * SLOT_MIN) / 60,
       manual: false, lateCancel: l.status === "cancelled_late",
     };
   });
@@ -685,7 +705,7 @@ function skipWeek() {
 async function goReplies() {
   S.tab = "replies";
   render();
-  const url = window.location.origin + "/";
+  const url = window.location.origin + "/s/" + (ME.slug || "");
   try {
     await navigator.clipboard.writeText(url);
     flash("Student link copied to clipboard");
@@ -703,7 +723,8 @@ function addEntry(studentId) {
 function removeEntry(id) { S.log = S.log.filter(e => e.id !== id); render(); }
 
 function resetYear() {
-  S.students = cloneStudents(); S.log = []; S.plan = null; S.weekNo = 1; S.weekStart = TERM_RANGES[0].start;
+  S.students.forEach(s => { s.lesson = 2; });
+  S.log = []; S.plan = null; S.weekNo = 1; S.weekStart = TERM_RANGES[0].start;
   S.offered = new Set(); S.replies = {}; S.result = null; S.openHours = null;
   flash("Year reset");
   render();
@@ -843,7 +864,8 @@ function render() {
 
 function renderHeader() {
   const tabs = [["week", "Offer"], ["replies", "Replies"], ["plan", "Schedule"], ["hours", "Hours"]];
-  return '<div class="bar"><div class="bartop"><h1 class="title">Oboe Lessons - Tom Blomfield</h1>' +
+  const title = (ME.instrument ? ME.instrument + " Lessons" : "Lesson Scheduler") + (ME.name ? " - " + ME.name : "");
+  return '<div class="bar"><div class="bartop"><h1 class="title">' + title + '</h1>' +
     '<div class="wk">Week ' + S.weekNo + " of " + TERM_WEEKS + '</div></div><div class="tabs">' +
     tabs.map(([k, label]) => '<button class="tab' + (S.tab === k ? " sel" : "") + '" data-action="tab" data-tab="' + k + '">' + label + "</button>").join("") +
     "</div></div>";
@@ -860,7 +882,7 @@ function renderTabContent() {
 function renderOfferTab() {
   const hours = (S.offered.size * SLOT_MIN) / 60;
   return '<div class="pad">' +
-    '<label class="dateline" style="margin-bottom:8px">Current week <input type="number" inputmode="numeric" min="1" max="' + TERM_WEEKS + '" data-bind="weekNo" value="' + S.weekNo + '" style="width:56px"> of ' + TERM_WEEKS + '</label>' +
+    '<label class="dateline" style="margin-bottom:8px">Current week <span><input type="number" inputmode="numeric" min="1" max="' + TERM_WEEKS + '" data-bind="weekNo" value="' + S.weekNo + '"> of ' + TERM_WEEKS + '</span></label>' +
     '<label class="dateline" style="margin-bottom:4px">Week beginning <input type="date" data-bind="weekStart" value="' + S.weekStart + '"></label>' +
     '<p style="font-size:13px;color:var(--ink-soft);margin:0 0 14px">' + (weekRangeLabel(S.weekStart) || "") + ' — check this matches the week you mean; correct it if a reading week or anything else has thrown it off.</p>' +
     '<p class="lede">Drag to paint the times you could teach this week. Students only ever see these.</p>' +
@@ -961,7 +983,7 @@ function renderPreConfirmPlanTab() {
       '<button class="btn" data-action="copyChosen">Copy as text</button>' +
       '<button class="btn" data-action="imageChosen">Make an image</button></div>' +
       (S.fallbackText ? '<textarea class="fallback" readonly rows="' + (S.fallbackText.split("\n").length + 1) + '" onfocus="this.select()">' + escapeHTML(S.fallbackText) + "</textarea>" : "") +
-      (S.imgUrl ? '<div class="imgwrap"><img src="' + S.imgUrl + '" alt="Schedule card"><a class="btn" href="' + S.imgUrl + '" download="oboe-week-' + S.weekNo + '.png">Save image</a></div>' : "") +
+      (S.imgUrl ? '<div class="imgwrap"><img src="' + S.imgUrl + '" alt="Schedule card"><a class="btn" href="' + S.imgUrl + '" download="lessons-week-' + S.weekNo + '.png">Save image</a></div>' : "") +
       "</div>";
     confirmBtn = '<div class="btnrow"><button class="btn sig" data-action="confirmSchedule">Confirm and log hours</button></div>';
   }
@@ -1005,7 +1027,7 @@ function renderLivePlanTab() {
     '<button class="btn" data-action="imageLive" ' + (live.length ? "" : "disabled") + ">Make an image</button></div>";
 
   const fallback = S.fallbackText ? '<textarea class="fallback" readonly rows="' + (S.fallbackText.split("\n").length + 1) + '" onfocus="this.select()">' + escapeHTML(S.fallbackText) + "</textarea>" : "";
-  const imgBlock = S.imgUrl ? '<div class="imgwrap"><img src="' + S.imgUrl + '" alt="Schedule card"><a class="btn" href="' + S.imgUrl + '" download="oboe-week-' + plan.weekNo + '.png">Save image</a></div>' : "";
+  const imgBlock = S.imgUrl ? '<div class="imgwrap"><img src="' + S.imgUrl + '" alt="Schedule card"><a class="btn" href="' + S.imgUrl + '" download="lessons-week-' + plan.weekNo + '.png">Save image</a></div>' : "";
   const endRow = '<div class="btnrow"><button class="btn sig" data-action="endWeek">End week and log hours</button></div>';
 
   return '<div class="pad">' + intro + dayPanels + emptyMsg + cancelledPanel + actionRow + fallback + imgBlock + endRow + "</div>";
@@ -1120,7 +1142,7 @@ document.getElementById("app").addEventListener("change", (e) => {
 /* ================================================================== */
 
 render();
-loadState().then(render);
+Promise.all([loadState(), loadMe()]).then(render);
 </script>
 </body>
 </html>
